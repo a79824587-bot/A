@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BGM Player</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* カスタムアニメーションとユーティリティ */
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .animate-pulse-fast {
+            animation: pulse-fast 0.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .animate-pulse-fast-100 { animation: pulse-fast 0.4s cubic-bezier(0.4, 0, 0.6, 1) infinite 100ms; }
+        .animate-pulse-fast-200 { animation: pulse-fast 0.4s cubic-bezier(0.4, 0, 0.6, 1) infinite 200ms; }
+        .animate-pulse-fast-300 { animation: pulse-fast 0.4s cubic-bezier(0.4, 0, 0.6, 1) infinite 300ms; }
+        
+        .fade-in {
+            animation: fadeIn 0.15s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* 選択・タッチ操作防止 */
+        .no-select {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            touch-action: manipulation;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-950 flex justify-center items-start pt-2 sm:pt-4 md:pt-6 p-2 sm:p-4 md:p-6 font-sans text-slate-100 selection:bg-red-500 selection:text-white no-select">
+    
+    <!-- 背景エフェクト -->
+    <div class="fixed inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(245,158,11,0.12),transparent_55%)] pointer-events-none"></div>
+    <div class="fixed inset-0 bg-[radial-gradient(circle_at_50%_85%,rgba(239,68,68,0.12),transparent_55%)] pointer-events-none"></div>
+
+    <!-- メインコンテナ -->
+    <div class="border border-slate-800/80 rounded-[2rem] sm:rounded-[2.5rem] p-3.5 sm:p-5 md:p-6 max-w-2xl w-full bg-slate-900/80 backdrop-blur-xl relative shadow-[0_20px_60px_rgba(0,0,0,0.9)]">
+        
+        <!-- ヘッダーバッジ -->
+        <div class="relative mb-3 flex flex-col items-center">
+            <div class="flex items-center gap-2 px-3 py-0.5 rounded-full border border-amber-500/30 bg-amber-950/30 backdrop-blur-md shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                <span class="text-[9px] font-black tracking-[0.25em] text-amber-300 uppercase">
+                    AUDIO CONTROL STATION / SYSTEM ACTIVE
+                </span>
+            </div>
+        </div>
+        
+        <div class="flex flex-col gap-3.5 items-center">
+            
+            <!-- BGMセクション -->
+            <div class="w-full flex flex-col items-center">
+                <div class="w-full flex items-center gap-2 mb-1 pl-1">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]"></span>
+                    <h2 class="text-sm sm:text-base font-extrabold tracking-widest text-slate-200 uppercase">BGM</h2>
+                </div>
+                <div class="flex flex-row justify-center gap-3.5 sm:gap-6 w-full" id="bgm-container">
+                    <!-- BGMトラックはJSで生成 -->
+                </div>
+            </div>
+
+            <!-- SEセクション -->
+            <div class="w-full flex flex-col relative mt-0.5">
+                <div class="w-full flex items-center justify-between mb-1 px-1">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
+                        <h2 class="text-sm sm:text-base font-extrabold tracking-widest text-slate-200 uppercase">効果音</h2>
+                    </div>
+                    <button id="stop-all-btn" class="text-[10px] font-bold px-2.5 py-1 bg-red-950/80 hover:bg-red-900 border border-red-800/80 hover:border-red-500 text-red-300 rounded-lg transition-all active:scale-95 flex items-center gap-1 shadow-sm cursor-pointer no-select">
+                        <span>■</span><span>全SE停止</span>
+                    </button>
+                </div>
+                
+                <div class="relative p-3 sm:p-3.5 rounded-3xl bg-slate-950/60 border border-slate-800/80 shadow-inner" id="se-container">
+                    <!-- SEパッドはJSで生成 -->
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 📦 設定データ ---
+        const AUDIO_CONFIG = {
+            bgm: [
+                { id: 'bgm1', name: 'オープニング', url: 'https://www.image2url.com/r2/default/audio/1788536523911-2d9053df-d220-4a32-ad62-5286ef96eb20.m4a' },
+                { id: 'bgm2', name: '戦闘BGM', url: 'https://www.image2url.com/r2/default/audio/1788515804416-2898e0c9-ea52-4764-bc99-9e87761a8ec8.mp3' },
+            ],
+            seRows: [
+                [
+                    { id: 'se1', name: '風魔法', url: 'https://www.image2url.com/r2/default/audio/1788591902147-db1f3708-25a1-4a1a-89c2-8080e99a925f.mp3' },
+                    { id: 'se2', name: 'ゴゴゴ', url: 'https://www.springin.org/wp-content/uploads/2022/06/%E5%9C%B0%E9%9F%BF%E3%81%8D2%E7%9F%AD.mp3' },
+                    { id: 'se3', name: '武装解除', url: 'https://www.springin.org/wp-content/uploads/2022/06/%E5%8F%8E%E6%9D%9F.mp3' },
+                ],
+                [
+                    { id: 'se4', name: '失敗', url: 'https://www.image2url.com/r2/default/audio/1788534694363-3cb9a8c1-9ba2-49f4-8d4f-73fa8762483c.mp3' },
+                    { id: 'se5', name: 'かっこいい', url: 'https://www.image2url.com/r2/default/audio/1788536716329-8d78dc52-78cf-4e5d-ad04-c27ab1a63efd.mp3' },
+                    { id: 'se6', name: '通常魔法', url: 'https://www.image2url.com/r2/default/audio/1788536897978-6940d0d2-0029-4bb9-aa8e-7a1c40aa0e36.mp3' },
+                ],
+                [
+                    { id: 'se7', name: '打撃', url: 'https://www.image2url.com/r2/default/audio/1788569726361-4abd1e0e-ff72-4f72-955a-8d90f07fa531.mp3' },
+                    { id: 'se8', name: '早そうな音', url: 'https://www.image2url.com/r2/default/audio/1788570940613-8e6a2aff-53bc-455d-b19b-173c89f28a38.mp3' },
+                    { id: 'se9', name: '合成', url: 'https://www.image2url.com/r2/default/audio/1788570758124-8e710291-2ece-4062-b023-f032ce730558.mp3' },
+                ],
+            ]
+        };
+
+        // --- URL整形ヘルパー ---
+        const formatUrl = (url) => {
+            if (!url) return "";
+            if (url.startsWith("Https://")) return "https://" + url.slice(8);
+            return url;
+        };
+
+        // --- 🎧 ノイズ防止用フェードアウト処理 ---
+        const fadeOutAndStop = (audio, targetVolume) => {
+            if (!audio) return null;
+            const startVolume = audio.volume;
+            const steps = 5;
+            const intervalTime = 10;
+            let currentStep = 0;
+
+            const interval = setInterval(() => {
+                currentStep++;
+                const newVolume = Math.max(0, startVolume * (1 - currentStep / steps));
+                if (audio) audio.volume = newVolume;
+                
+                if (currentStep >= steps) {
+                    clearInterval(interval);
+                    if (audio) {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        audio.volume = targetVolume; 
+                    }
+                }
+            }, intervalTime);
+            return interval;
+        };
+
+        class BgmPlayer {
+            constructor(config, container) {
+                this.config = config;
+                this.container = container;
+                this.isPlaying = false;
+                this.defaultVolume = 0.5;
+                this.cleanUrl = formatUrl(config.url);
+                this.hasAudio = Boolean(this.cleanUrl && this.cleanUrl.trim() !== '' && !this.cleanUrl.startsWith('http://googleusercontent.com/'));
+                this.fadeInterval = null;
+
+                this.audio = new Audio();
+                this.audio.loop = true;
+                this.audio.preload = "auto";
+                this.audio.volume = this.defaultVolume;
+                if (this.hasAudio) {
+                    this.audio.src = this.cleanUrl;
+                }
+
+                this.element = this.createDOM();
+                this.container.appendChild(this.element);
+            }
+
+            togglePlay() {
+                if (!this.hasAudio) return;
+
+                if (this.fadeInterval) {
+                    clearInterval(this.fadeInterval);
+                    this.fadeInterval = null;
+                }
+
+                if (this.isPlaying) {
+                    this.isPlaying = false;
+                    this.fadeInterval = fadeOutAndStop(this.audio, this.defaultVolume);
+                } else {
+                    this.audio.volume = this.defaultVolume;
+                    this.audio.currentTime = 0;
+                    this.audio.play().then(() => {
+                        this.isPlaying = true;
+                        this.updateDOM();
+                    }).catch(e => {
+                        console.error("BGM再生エラー:", e);
+                        this.isPlaying = false;
+                    });
+                }
+                this.updateDOM();
+            }
+
+            createDOM() {
+                const div = document.createElement('div');
+                this.updateDOMContent(div);
+                return div;
+            }
+
+            updateDOM() {
+                this.updateDOMContent(this.element);
+            }
+
+            updateDOMContent(el) {
+                const wrapperClass = this.isPlaying 
+                    ? 'bg-slate-900/90 border-amber-500/80 shadow-[0_0_25px_rgba(245,158,11,0.25)]' 
+                    : 'bg-slate-900/40 border-slate-800 shadow-lg hover:border-slate-700';
+                
+                const topGlow = this.isPlaying 
+                    ? '<div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500 via-amber-300 to-amber-500 animate-pulse"></div>' 
+                    : '';
+                
+                const dotClass = this.isPlaying ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-ping' : 'bg-slate-700';
+                
+                const bar1Class = this.isPlaying ? 'h-full animate-pulse-fast-100' : 'h-1.5 bg-slate-800';
+                const bar2Class = this.isPlaying ? 'h-3/4 animate-pulse-fast-200' : 'h-1.5 bg-slate-800';
+                const bar3Class = this.isPlaying ? 'h-full animate-pulse-fast-300' : 'h-1.5 bg-slate-800';
+                
+                const btnClass = this.isPlaying 
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.5)] border border-amber-300' 
+                    : this.hasAudio 
+                        ? 'bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-amber-400 hover:border-amber-500/50' 
+                        : 'bg-slate-950 border border-slate-800 text-slate-700 opacity-40 cursor-not-allowed';
+                
+                const btnContent = this.isPlaying 
+                    ? '<span class="w-2 h-2 bg-slate-950 rounded-xs"></span><span>STOP</span>'
+                    : '<span class="w-0 h-0 border-y-4 border-y-transparent border-l-6 border-l-current ml-0.5"></span><span>PLAY</span>';
+
+                el.className = `w-full max-w-[200px] rounded-2xl border p-3.5 transition-all duration-300 backdrop-blur-md relative overflow-hidden ${wrapperClass}`;
+                el.innerHTML = `
+                    ${topGlow}
+                    <div class="flex items-center justify-between mb-2.5">
+                        <span class="text-xs font-bold tracking-wider text-slate-300 truncate">${this.config.name}</span>
+                        <span class="w-2 h-2 rounded-full ${dotClass}"></span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2.5">
+                        <div class="flex gap-1 items-end h-7 px-2 py-1 bg-slate-950/80 rounded-lg border border-slate-800">
+                            <span class="w-1 rounded-sm bg-amber-400 transition-all ${bar1Class}"></span>
+                            <span class="w-1 rounded-sm bg-amber-400 transition-all ${bar2Class}"></span>
+                            <span class="w-1 rounded-sm bg-amber-400 transition-all ${bar3Class}"></span>
+                        </div>
+                        <button class="bgm-btn flex-1 h-9 rounded-xl font-black text-xs tracking-widest transition-all duration-200 active:scale-95 flex items-center justify-center gap-1.5 no-select ${btnClass}" ${!this.hasAudio ? 'disabled' : ''}>
+                            ${btnContent}
+                        </button>
+                    </div>
+                `;
+
+                const btn = el.querySelector('.bgm-btn');
+                if (btn) {
+                    btn.onclick = () => this.togglePlay();
+                }
+            }
+        }
+
+        class SePlayer {
+            constructor(config, container) {
+                this.config = config;
+                this.container = container;
+                this.playState = 'IDLE'; // 'IDLE', 'SINGLE', 'LOOP'
+                this.defaultVolume = 0.7;
+                this.cleanUrl = formatUrl(config.url);
+                this.hasAudio = Boolean(this.cleanUrl && this.cleanUrl.trim() !== '' && !this.cleanUrl.startsWith('http://googleusercontent.com/'));
+                this.fadeInterval = null;
+
+                if (this.hasAudio) {
+                    this.audio = new Audio(this.cleanUrl);
+                    this.audio.preload = "auto";
+                    this.audio.volume = this.defaultVolume;
+                    this.audio.addEventListener('ended', () => {
+                        this.playState = 'IDLE';
+                        this.updateDOM();
+                    });
+                }
+
+                // グローバルな停止イベントをリッスン
+                window.addEventListener('stop-all-se', () => this.stopGlobal());
+
+                this.element = this.createDOM();
+                this.container.appendChild(this.element);
+            }
+
+            play() {
+                if (!this.hasAudio) return;
+
+                if (this.fadeInterval) {
+                    clearInterval(this.fadeInterval);
+                    this.fadeInterval = null;
+                }
+
+                this.audio.loop = false;
+                this.audio.volume = this.defaultVolume;
+                this.audio.currentTime = 0;
+                
+                this.playState = 'SINGLE';
+                this.updateDOM();
+                
+                this.audio.play().catch(e => {
+                    console.error("SE再生エラー:", e);
+                    this.playState = 'IDLE';
+                    this.updateDOM();
+                });
+            }
+
+            stop(e) {
+                if(e) e.stopPropagation();
+                if (!this.hasAudio) return;
+                
+                this.playState = 'IDLE';
+                this.updateDOM();
+                
+                if (this.fadeInterval) {
+                    clearInterval(this.fadeInterval);
+                    this.fadeInterval = null;
+                }
+                this.fadeInterval = fadeOutAndStop(this.audio, this.defaultVolume);
+            }
+
+            stopGlobal() {
+                if (this.audio && !this.audio.paused) {
+                    this.playState = 'IDLE';
+                    this.updateDOM();
+                    if (this.fadeInterval) {
+                        clearInterval(this.fadeInterval);
+                        this.fadeInterval = null;
+                    }
+                    this.fadeInterval = fadeOutAndStop(this.audio, this.defaultVolume);
+                }
+            }
+
+            setLoop(e) {
+                if(e) e.stopPropagation();
+                if (this.audio) {
+                    this.audio.loop = true;
+                    this.playState = 'LOOP';
+                    this.updateDOM();
+                    
+                    if (this.audio.paused) {
+                        this.audio.currentTime = 0;
+                        this.audio.play().catch(e => console.error("ループ再開エラー:", e));
+                    }
+                }
+            }
+
+            createDOM() {
+                const div = document.createElement('div');
+                div.className = "flex flex-col items-center w-full max-w-[140px]";
+                this.updateDOMContent(div);
+                return div;
+            }
+
+            updateDOM() {
+                this.updateDOMContent(this.element);
+            }
+
+            updateDOMContent(el) {
+                const isPlaying = this.playState !== 'IDLE';
+                
+                let titleClass = 'text-red-400 border-red-500/80 bg-red-950/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]';
+                if (isPlaying) {
+                    titleClass = this.playState === 'LOOP'
+                        ? 'text-fuchsia-300 border-fuchsia-400 bg-fuchsia-900/80 shadow-[0_0_12px_rgba(217,70,239,0.6)] animate-pulse'
+                        : 'text-red-300 border-red-400 bg-red-900/80 shadow-[0_0_12px_rgba(239,68,68,0.6)] animate-pulse';
+                }
+
+                let controlsHTML = '';
+
+                if (this.playState === 'IDLE') {
+                    const btnClass = this.hasAudio 
+                        ? 'bg-slate-900 border-slate-800 text-slate-200 hover:border-red-500/60 hover:text-red-400 shadow-[0_4px_12px_rgba(0,0,0,0.5)]' 
+                        : 'bg-slate-950/60 border-slate-900 text-slate-700 opacity-40 cursor-not-allowed';
+                    const dot = this.hasAudio ? '<span class="w-1.5 h-1.5 rounded-full bg-red-500/80"></span>' : '';
+                    controlsHTML = `
+                        <button class="se-play-btn w-full h-full rounded-xl border font-bold text-xs transition-all duration-75 flex items-center justify-center gap-1.5 relative overflow-hidden active:scale-90 no-select ${btnClass}" ${!this.hasAudio ? 'disabled' : ''}>
+                            <span class="tracking-wider">流す</span>
+                            ${dot}
+                        </button>
+                    `;
+                } else if (this.playState === 'SINGLE') {
+                    controlsHTML = `
+                        <div class="w-full h-full flex gap-0.5 fade-in">
+                            <button class="se-stop-btn flex-1 h-full rounded-l-xl border border-red-400/80 bg-red-600 text-white font-bold text-[10px] sm:text-[11px] shadow-[0_0_15px_rgba(239,68,68,0.6)] active:bg-red-700 transition-colors no-select">
+                                止める
+                            </button>
+                            <button class="se-loop-btn flex-[1.2] h-full rounded-r-xl border border-fuchsia-400/80 bg-fuchsia-600 text-white font-bold text-[10px] sm:text-[11px] shadow-[0_0_15px_rgba(217,70,239,0.6)] active:bg-fuchsia-700 transition-colors flex items-center justify-center no-select">
+                                連続再生
+                            </button>
+                        </div>
+                    `;
+                } else if (this.playState === 'LOOP') {
+                    controlsHTML = `
+                        <button class="se-stop-btn w-full h-full rounded-xl border border-fuchsia-400 bg-fuchsia-700 text-white font-bold text-xs shadow-[0_0_20px_rgba(217,70,239,0.8)] flex items-center justify-center gap-1.5 active:scale-90 transition-all animate-pulse no-select">
+                            <span class="w-2.5 h-2.5 border-2 border-white rounded-full animate-spin border-t-transparent"></span>
+                            <span class="tracking-wider">止める</span>
+                        </button>
+                    `;
+                }
+
+                el.innerHTML = `
+                    <div class="text-[11px] mb-1.5 px-3 py-0.5 truncate w-20 text-center block font-bold border rounded-full transition-all duration-100 ${titleClass}">
+                        <span class="truncate block" title="${this.config.name}">${this.config.name}</span>
+                    </div>
+                    <div class="w-full h-11 sm:h-12 relative flex">
+                        ${controlsHTML}
+                    </div>
+                `;
+
+                // イベントリスナーの再登録
+                const playBtn = el.querySelector('.se-play-btn');
+                if (playBtn) playBtn.onclick = () => this.play();
+
+                const stopBtns = el.querySelectorAll('.se-stop-btn');
+                stopBtns.forEach(btn => btn.onclick = (e) => this.stop(e));
+
+                const loopBtn = el.querySelector('.se-loop-btn');
+                if (loopBtn) loopBtn.onclick = (e) => this.setLoop(e);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 全停止ボタンのイベント設定
+            document.getElementById('stop-all-btn').addEventListener('click', () => {
+                window.dispatchEvent(new Event('stop-all-se'));
+            });
+
+            // BGMの生成
+            const bgmContainer = document.getElementById('bgm-container');
+            AUDIO_CONFIG.bgm.forEach(config => {
+                new BgmPlayer(config, bgmContainer);
+            });
+
+            // SEの生成
+            const seContainer = document.getElementById('se-container');
+            AUDIO_CONFIG.seRows.forEach((row, rowIndex) => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = "grid grid-cols-3 gap-2 sm:gap-3 relative z-10 justify-items-center";
+                
+                row.forEach(config => {
+                    new SePlayer(config, rowDiv);
+                });
+                
+                seContainer.appendChild(rowDiv);
+
+                if (rowIndex < AUDIO_CONFIG.seRows.length - 1) {
+                    const divider = document.createElement('div');
+                    divider.className = "border-b border-dashed border-slate-800/80 my-2.5 sm:my-3 relative z-10";
+                    seContainer.appendChild(divider);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
